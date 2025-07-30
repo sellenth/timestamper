@@ -1,0 +1,11 @@
+[project]
+name = "video-timestamper"
+version = "0.1.0"
+description = "Extract witty timestamps from YouTube videos using Gemini API"
+requires-python = ">=3.9"
+dependencies = [
+    "google-generativeai>=0.8.0",
+]
+
+[project.scripts]
+timestamper = "video_timestamper:main"
