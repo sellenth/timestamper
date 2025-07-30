@@ -31,28 +31,13 @@ class VideoTimestamper:
         
         genai.configure(api_key=self.api_key)
         
-        # Define schema for concise timestamps
-        self.timestamp_schema = {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "timestamp": {"type": "STRING"},  # Format: "HH:MM:SS"
-                    "description": {"type": "STRING"}  # 8-15 word witty description
-                },
-                "required": ["timestamp", "description"]
-            }
-        }
-        
-        # Configure model with structured output
+        # Configure model without structured output to avoid hallucinations
         generation_config = {
-            "response_mime_type": "application/json",
-            "response_schema": self.timestamp_schema,
             "temperature": 0.8  # Higher for more creative/humorous output
         }
         
         self.model = genai.GenerativeModel(
-            'gemini-2.5-pro',
+            'gemini-2.5-flash',
             generation_config=generation_config
         )
     
@@ -68,25 +53,45 @@ class VideoTimestamper:
         
         timestamp_list = "\n".join([f"- {ts}" for ts in timestamps])
         
-        prompt = f"""Analyze this video at these exact timestamps:
+        prompt = f"""You are analyzing a specific YouTube video. Look at the actual video content at these EXACT timestamps:
 {timestamp_list}
 
-For each timestamp, provide a witty, slightly humorous description of what's happening.
-Keep descriptions between 8-15 words. Be clever but accurate.
-Think: "If a friendly internet troll was describing this moment to a friend"
+IMPORTANT: This is a technical video about evaluating Claude Code for Godot game development. 
+Focus on what the presenter is showing, saying, or demonstrating at each specific timestamp.
 
-Examples of good descriptions:
-- "Host discovers coffee is actually just bean water"
-- "Yeeeup, still looking at the same thing in silence"
-- "The part where everyone pretends to understand the graph"
+For each timestamp, provide output in this exact format:
+{{
+  "timestamp": "HH:MM:SS",
+  "description": "8-15 word description with slightly humorous tone"
+}}
 
-Return ONLY at the requested timestamps, no extras."""
+Keep descriptions between 8-15 words. Be witty but accurate about THIS specific video.
+Describe what you see on screen - code, Godot editor, demonstrations, etc.
+
+Return ONLY a JSON array of these objects, nothing else."""
 
         try:
-            response = self.model.generate_content([youtube_url, prompt])
-            return json.loads(response.text)
+            # For YouTube videos, we need to pass the URL as a string directly
+            # The Gemini API handles YouTube URLs automatically
+            response = self.model.generate_content([
+                youtube_url,
+                prompt
+            ])
+            # Clean up response text to ensure valid JSON
+            text = response.text.strip()
+            # Remove markdown code blocks if present
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+            
+            return json.loads(text)
         except Exception as e:
             print(f"Error generating timestamps: {e}")
+            print(f"Full error details: {type(e).__name__}: {str(e)}")
             return []
     
     def format_output(self, timestamps: List[Dict], save_to_file: str = None) -> str:
@@ -134,6 +139,7 @@ def main():
         sys.exit(1)
     
     youtube_url = normalize_youtube_url(sys.argv[1])
+    print("getting this url: ", youtube_url)
     interval = int(sys.argv[2]) if len(sys.argv) > 2 else 30
     
     print(f"🎥 Analyzing video at {interval}-minute intervals...")
